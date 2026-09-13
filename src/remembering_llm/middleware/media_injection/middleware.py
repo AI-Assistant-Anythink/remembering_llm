@@ -1,4 +1,3 @@
-import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -7,7 +6,6 @@ from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage, ToolMessage
-from langchain_core.tools import BaseTool
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
@@ -19,21 +17,6 @@ ContentBlockBuilder = Callable[[BytesIO, str], list[dict] | dict]
 
 # имя tool -> builder, знающий, как собрать content-блок(и) под этот тип медиа
 MEDIA_TOOLS: dict[str, ContentBlockBuilder] = {}
-
-
-def _find_injected_storage_param(tool: BaseTool) -> str | None:
-    """Ищет среди параметров tool'а такой, что типизирован как BaseMediaStorage
-    (сама она — _DirectlyInjectedToolArg, поэтому LangChain и так прячет его от LLM)."""
-    func = getattr(tool, "coroutine", None) or getattr(tool, "func", None)
-    if func is None:
-        return None
-
-    for name, param in inspect.signature(func).parameters.items():
-        annotation = param.annotation
-        if isinstance(annotation, type) and issubclass(annotation, BaseMediaStorage):
-            return name
-
-    return None
 
 
 def media_tool(builder: ContentBlockBuilder):
@@ -73,16 +56,6 @@ class MediaInjectionMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
-        if request.tool is not None:
-            storage_param = _find_injected_storage_param(request.tool)
-            if storage_param is not None:
-                request = request.override(
-                    tool_call={
-                        **request.tool_call,
-                        "args": {**request.tool_call["args"], storage_param: self.storage},
-                    }
-                )
-
         result = await handler(request)
         tool_name = request.tool_call.get("name")
 

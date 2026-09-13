@@ -17,10 +17,7 @@ from remembering_llm.middleware.media_injection import (
     media_tool,
 )
 from remembering_llm.middleware.media_injection.builders import build_image_block
-from remembering_llm.middleware.media_injection.storage import (
-    BaseMediaStorage,
-    InMemoryMediaStorage,
-)
+from remembering_llm.middleware.media_injection.storage import InMemoryMediaStorage
 from remembering_llm.short_term_memory import SqliteShortTermMemory
 from remembering_llm.tools import add_memory, search_memory, stay_silent
 
@@ -84,7 +81,7 @@ MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
 @media_tool(build_image_block)
 @tool
-async def download_image(url: str, storage: BaseMediaStorage) -> str:
+async def download_image(url: str) -> str:
     """Скачать изображение по URL из интернета.
     Используй, когда пользователь прислал ссылку на картинку или просит показать
     изображение по конкретному адресу."""
@@ -114,7 +111,7 @@ async def download_image(url: str, storage: BaseMediaStorage) -> str:
     mime_type = content_type.split(";")[0].strip()  # отсекаем charset и т.п., если есть
     buffer = BytesIO(response.content)
 
-    media_id = await storage.put_media(buffer, mime_type=mime_type)
+    media_id = await media_storage.put_media(buffer, mime_type=mime_type)
 
     return json.dumps({"media_id": media_id, "media_type": "image"})
 
