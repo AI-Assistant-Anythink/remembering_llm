@@ -33,7 +33,7 @@ from .context import LLMContext
 from .request_analysis import RequestAnalysis
 from .short_term_memory import BaseShortTermMemory, MemoryMessage
 
-logger = logging.getLogger()
+logger = logging.getLogger("remembering_llm")
 
 SystemPromptFn = Callable[["LLMContext"], str | Awaitable[str]]
 SystemPromptType = str | SystemPromptFn
@@ -227,14 +227,17 @@ class RememberingLLM:
         async for chunk in chunks:
             yield chunk
 
+        logger.info("stream is end")
         asyncio.create_task(self._compact_memory(context.user_id))
 
     async def _compact_memory(self, user_id: str):
+        logger.info("start _compact_memory")
         async with self._locks[user_id]:
             if (
                 await self.short_term_memory.count_messages(user_id)
                 >= self.short_term_limit
             ):
+                logger.info("compacting memory")
                 chat_history = await self.short_term_memory.get_dialog(user_id)
                 overflow = chat_history[: -self.active_short_term_limit]
 
@@ -270,6 +273,7 @@ class RememberingLLM:
 
                 try:
                     await mem0_task
+                    logger.info("mem0_task is finished")
                 except Exception:
                     logger.exception(f"Mem0 add failed for user_id={user_id}")
                     raise
@@ -282,8 +286,11 @@ class RememberingLLM:
                         user_id=user_id, message=SystemMessage(content=summary)
                     )
 
+                logger.info("compacting memory is finish")
+
     async def _summary_dialog(self, chat_history: list[BaseMessage]) -> str | None:
         if not self._summarizer_llm:
+            logger.info("summarizer_llm is None")
             return None
 
         old_summary = None
@@ -303,7 +310,9 @@ class RememberingLLM:
             "Уложись строго в 150-200 слов независимо от объёма исходного материала."
         )
 
+        logger.info("summarizering memmory...")
         new_summary = await self._summarizer_llm.ainvoke(prompt)
+        logger.info("summarizered memmory")
         return new_summary.content
 
     async def _get_search_query(
@@ -330,6 +339,7 @@ class RememberingLLM:
         async for item in agent_input_stream:
             agent_input = item
 
+        logger.info("Start streaming LLM")
         async for mode, chunk in self._llm_agent.astream(
             agent_input,
             stream_mode=["messages", "values"],
