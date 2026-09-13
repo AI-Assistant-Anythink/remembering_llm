@@ -19,7 +19,7 @@ from remembering_llm.middleware.media_injection import (
 from remembering_llm.middleware.media_injection.builders import build_image_block
 from remembering_llm.middleware.media_injection.storage import InMemoryMediaStorage
 from remembering_llm.short_term_memory import SqliteShortTermMemory
-from remembering_llm.tools import add_memory, search_memory
+from remembering_llm.tools import add_memory, search_memory, stay_silent
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
@@ -148,7 +148,7 @@ llm = RememberingLLM(
         timeout=30,
         temperature=0.2,
     ),
-    tools=[add_memory, search_memory, get_weather, download_image],
+    tools=[add_memory, search_memory, stay_silent, get_weather, download_image],
     middleware=[media_injection_middleware],
 )
 
