@@ -17,7 +17,10 @@ from remembering_llm.middleware.media_injection import (
     media_tool,
 )
 from remembering_llm.middleware.media_injection.builders import build_image_block
-from remembering_llm.middleware.media_injection.storage import InMemoryMediaStorage
+from remembering_llm.middleware.media_injection.storage import (
+    InMemoryMediaStorage,
+    BaseMediaStorage,
+)
 from remembering_llm.short_term_memory import SqliteShortTermMemory
 from remembering_llm.tools import add_memory, search_memory, stay_silent
 
@@ -79,41 +82,46 @@ media_injection_middleware = MediaInjectionMiddleware(storage=media_storage)
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
 
-@media_tool(build_image_block)
-@tool
-async def download_image(url: str) -> str:
-    """Скачать изображение по URL из интернета.
-    Используй, когда пользователь прислал ссылку на картинку или просит показать
-    изображение по конкретному адресу."""
+def build_download_image_tool(storage: BaseMediaStorage):
+    @media_tool(build_image_block)
+    @tool
+    async def download_image(url: str) -> str:
+        """Скачать изображение по URL из интернета.
+        Используй, когда пользователь прислал ссылку на картинку или просит показать
+        изображение по конкретному адресу."""
 
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        return json.dumps(
-            {"error": f"Не удалось скачать: сервер вернул {e.response.status_code}"}
-        )
-    except httpx.RequestError as e:
-        return json.dumps({"error": f"Не удалось скачать: {e}"})
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            return json.dumps(
+                {"error": f"Не удалось скачать: сервер вернул {e.response.status_code}"}
+            )
+        except httpx.RequestError as e:
+            return json.dumps({"error": f"Не удалось скачать: {e}"})
 
-    content_type = response.headers.get("content-type", "")
-    if not content_type.startswith("image/"):
-        return json.dumps(
-            {
-                "error": f"По ссылке не изображение, а {content_type or 'неизвестный тип'}"
-            }
-        )
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            return json.dumps(
+                {
+                    "error": f"По ссылке не изображение, а {content_type or 'неизвестный тип'}"
+                }
+            )
 
-    if len(response.content) > MAX_IMAGE_SIZE_BYTES:
-        return json.dumps({"error": "Изображение слишком большое (>10 МБ)"})
+        if len(response.content) > MAX_IMAGE_SIZE_BYTES:
+            return json.dumps({"error": "Изображение слишком большое (>10 МБ)"})
 
-    mime_type = content_type.split(";")[0].strip()  # отсекаем charset и т.п., если есть
-    buffer = BytesIO(response.content)
+        mime_type = content_type.split(";")[
+            0
+        ].strip()  # отсекаем charset и т.п., если есть
+        buffer = BytesIO(response.content)
 
-    media_id = await media_storage.put_media(buffer, mime_type=mime_type)
+        media_id = await storage.put_media(buffer, mime_type=mime_type)
 
-    return json.dumps({"media_id": media_id, "media_type": "image"})
+        return json.dumps({"media_id": media_id, "media_type": "image"})
+
+    return download_image
 
 
 short_term_memory = SqliteShortTermMemory("./tmp/chroma/short_term.db")
@@ -148,7 +156,13 @@ llm = RememberingLLM(
         timeout=30,
         temperature=0.2,
     ),
-    tools=[add_memory, search_memory, stay_silent, get_weather, download_image],
+    tools=[
+        add_memory,
+        search_memory,
+        stay_silent,
+        get_weather,
+        build_download_image_tool(media_storage),
+    ],
     middleware=[media_injection_middleware],
 )
 

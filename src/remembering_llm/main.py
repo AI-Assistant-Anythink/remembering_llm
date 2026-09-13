@@ -177,9 +177,9 @@ class RememberingLLM:
             f"История:\n{format_history(chat_history[-self.active_short_term_limit:])}\n\n"
             f"Сообщение:\n{format_history(current_messages)}"
         )
-        analysis = await self._fast_llm.with_structured_output(RequestAnalysis).ainvoke(
-            prompt
-        )
+        analysis = await self._fast_llm.with_structured_output(
+            RequestAnalysis, method="function_calling"
+        ).ainvoke(prompt)
         logger.info(f"RequestAnalysis: {analysis}")
 
         context.analysis = analysis
