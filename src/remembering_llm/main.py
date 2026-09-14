@@ -55,6 +55,7 @@ class RememberingLLM:
         middleware: Sequence[AgentMiddleware[StateT_co, ContextT]] = (),
     ):
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._background_tasks: set[asyncio.Task] = set()
 
         self._system_prompt = system_prompt
 
@@ -261,7 +262,9 @@ class RememberingLLM:
             yield chunk
 
         logger.info("stream is end")
-        asyncio.create_task(self._compact_memory(context.user_id))
+        task = asyncio.create_task(self._compact_memory(context.user_id))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _compact_memory(self, user_id: str):
         logger.info("start _compact_memory")
