@@ -53,9 +53,11 @@ class RememberingLLM:
         top_k_memories: int = 10,
         tools: Sequence[BaseTool | Callable[..., Any] | dict[str, Any]] | None = None,
         middleware: Sequence[AgentMiddleware[StateT_co, ContextT]] = (),
+        mem0_timeout: float = 60.0,
     ):
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._background_tasks: set[asyncio.Task] = set()
+        self._mem0_timeout = mem0_timeout
 
         self._system_prompt = system_prompt
 
@@ -295,7 +297,7 @@ class RememberingLLM:
                     raise
 
                 try:
-                    await mem0_task
+                    await asyncio.wait_for(mem0_task, timeout=self._mem0_timeout)
                     logger.info("mem0_task is finished")
                 except Exception:
                     logger.exception(f"Mem0 add failed for user_id={user_id}")
