@@ -48,9 +48,8 @@ async def add_memory(fact: str, config: RunnableConfig) -> str:
 
     logger.info(f'add_memory "{fact}" for {context.user_id}')
 
-    await context.remembering_llm.long_term_memory.add(
-        [{"role": "user", "content": fact}],
-        user_id=context.user_id,
+    await context.remembering_llm.add_long_term_memory(
+        user_id=context.user_id, content=fact
     )
 
     return "Запомнено"

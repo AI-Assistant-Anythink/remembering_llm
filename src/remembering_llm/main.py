@@ -128,6 +128,39 @@ class RememberingLLM:
             top_k=self.top_k_memories,
         )
 
+    async def add_short_term_message(
+        self, user_id: str, message: BaseMessage
+    ) -> MemoryMessage:
+        """Добавить сообщение в краткосрочную память напрямую"""
+        return await self.short_term_memory.add_message(
+            user_id=user_id, message=message
+        )
+
+    async def add_long_term_memory(
+        self, user_id: str, content: str, role: str = "user"
+    ) -> None:
+        """Сохранить факт в долгосрочную память напрямую, минуя краткосрочную."""
+        await self.long_term_memory.add(
+            [{"role": role, "content": content}], user_id=user_id
+        )
+
+    async def flush_short_term_memory(self, user_id: str) -> None:
+        """Перенести всю краткосрочную память пользователя в долгосрочную и
+        полностью очистить краткосрочную (в отличие от автокомпакции — без
+        сохранения активного хвоста и без суммаризации)."""
+        async with self._locks[user_id]:
+            chat_history = await self.short_term_memory.get_dialog(user_id)
+            if not chat_history:
+                return
+
+            messages_for_mem0 = _to_mem0_messages(chat_history)
+            if messages_for_mem0:
+                await self.long_term_memory.add(messages_for_mem0, user_id=user_id)
+
+            await self.short_term_memory.delete_messages(
+                user_id=user_id, ids=[msg.id for msg in chat_history]
+            )
+
     async def _init_context(
         self,
         request: HumanMessage | str | list[str | dict[Any, Any]] | list[HumanMessage],
@@ -241,20 +274,7 @@ class RememberingLLM:
                 chat_history = await self.short_term_memory.get_dialog(user_id)
                 overflow = chat_history[: -self.active_short_term_limit]
 
-                messages_for_mem0 = [
-                    {
-                        "role": (
-                            "user"
-                            if isinstance(m.message, HumanMessage)
-                            else "assistant"
-                        ),
-                        "content": f"[{m.timestamp.isoformat()}]: {m.message.content}",
-                    }
-                    for m in overflow
-                    if isinstance(
-                        m.message, (HumanMessage, AIMessage)
-                    )  # пропустить старый SystemMessage(summary)
-                ]
+                messages_for_mem0 = _to_mem0_messages(overflow)
 
                 mem0_task = asyncio.create_task(
                     self.long_term_memory.add(messages_for_mem0, user_id=user_id)
@@ -370,6 +390,19 @@ def debug_prompt(a: ChatPromptValue):
 
 
 LLMContext.model_rebuild()
+
+
+def _to_mem0_messages(items: list[MemoryMessage]) -> list[dict]:
+    """Приводит записи краткосрочной памяти к формату, который ожидает
+    mem0 AsyncMemory.add(). Системные сообщения (старое summary) пропускаются."""
+    return [
+        {
+            "role": "user" if isinstance(m.message, HumanMessage) else "assistant",
+            "content": f"[{m.timestamp.isoformat()}]: {m.message.content}",
+        }
+        for m in items
+        if isinstance(m.message, (HumanMessage, AIMessage))
+    ]
 
 
 def format_history(chat_history: list[BaseMessage]):
